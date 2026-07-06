@@ -2,6 +2,8 @@ name: Update Market Radar Dashboard
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     # Taiwan time: 08:37, 12:37, 15:17, 20:07
     - cron: "37 0 * * *"
