@@ -1,40 +1,51 @@
-# Threads 台股市場熱度雷達
+# 市場熱度雷達 Pro
 
-這是一個雲端版 MVP，用來回答「市場今天在討論什麼」。
+這是一個台股市場熱度 MVP，現在升級成「三層資訊引擎」：
 
-## 功能
+| 層級 | 目的 |
+| --- | --- |
+| 社群熱度 | Threads、PTT、Dcard 相關討論：大家在討論什麼 |
+| 券商／投信研究 | 券商晨報、投信觀點、產業報告：法人看好什麼 |
+| 市場數據 | 法人買賣超、成交量、重大訊息、法說會：資金是否真的流入 |
 
-- 每天在 GitHub Actions 自動更新
-- 抓取公開新聞/RSS fallback
-- 自動辨識台股個股、ETF、產業題材
-- 計算今日熱度、突然暴增題材、情緒方向
-- 自動部署到 GitHub Pages
+## 目前輸出
 
-## 更新時間
+- 今日市場總結：「市場今天在討論什麼」
+- AI 法人共識分析
+- 今日十大法人共識股
+- 明日最值得關注的 5 檔股票
+- 市場熱度交叉分析表
+- 來源明細與 JSON API：`data/latest.json`
 
-GitHub Actions 使用 UTC 排程，對應台灣時間：
+## GitHub Pages 自動更新
+
+GitHub Actions 會在台灣時間以下時段自動更新：
 
 - 08:37
 - 12:37
 - 15:17
 - 20:07
 
-也可以在 GitHub 的 `Actions` 頁面手動執行 `Update Market Radar Dashboard`。
+也可以手動到 GitHub Actions 執行 `Update Market Radar Dashboard`。
 
-## GitHub Pages 設定
+## Google Cloud 架構
 
-請到 repo 的：
+正式雲端架構：
 
-`Settings` → `Pages` → `Build and deployment` → 選 `GitHub Actions`
+```text
+Cloud Scheduler
+        ↓
+Cloud Run
+        ↓
+GitHub Repository 更新 gh-pages/index.html 與 data/latest.json
+        ↓
+GitHub Pages
+```
 
-首次設定後，到 `Actions` 手動執行一次 workflow。完成後網站會在：
+Cloud Run 入口檔是 `cloud_run_service.py`，容器設定是 `Dockerfile`。部署步驟請看 `CLOUD_RUN_SETUP.md`。
 
-`https://dilyschy-gif.github.io/market-radar/`
+## 資料來源狀態
 
-## 費用
+目前 Pro 版先用公開 Google News RSS 做三層資料偵測與交叉分析，屬於低成本 MVP。正式接入 Threads API、PTT/Dcard、券商報告授權、TWSE/TPEx 法人與成交資料時，可以沿用同一個三層架構，只要替換資料蒐集器。
 
-公開 repo 使用 GitHub Pages 和標準 GitHub-hosted Actions runner，通常不會產生費用。
-
-## 注意
-
-此 MVP 使用公開新聞/RSS 訊號估算市場討論熱度，不構成投資建議。
+此工具只做資訊整理，不構成投資建議。
