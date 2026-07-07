@@ -3,3 +3,4 @@ feedparser==6.0.12
 plotly==6.8.0
 numpy==2.5.1
 pandas==3.0.3
+Flask>=3.0,<4
