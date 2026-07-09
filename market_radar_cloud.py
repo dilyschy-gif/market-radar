@@ -29,30 +29,44 @@ QUERIES = [
     "台股 成交量 題材",
 ]
 
+# 股票池與 market_radar_pro.py 保持同步（兩份主程式的股票池曾經不同步、輸出互相矛盾，
+# 這裡改為聯集後的同一份清單；未來新增/移除個股請兩個檔案一起改）。
+# exclude / require_any 用法同 market_radar_pro.py：
+#   exclude:      命中即判定為誤判（例如「長榮航」是航空股 2618，不是航運股 2603）
+#   require_any:  別名為通用詞彙時，需搭配清單中至少一詞才算數（例如「創意」需搭配 IC 設計相關字樣）
 STOCKS = [
-    ("2330", "台積電", ["台積電", "TSMC", "2330"]),
-    ("2317", "鴻海", ["鴻海", "富士康", "2317"]),
-    ("2454", "聯發科", ["聯發科", "發哥", "2454"]),
-    ("2308", "台達電", ["台達電", "台達", "2308"]),
-    ("2382", "廣達", ["廣達", "2382"]),
-    ("3231", "緯創", ["緯創", "3231"]),
-    ("6669", "緯穎", ["緯穎", "6669"]),
-    ("3017", "奇鋐", ["奇鋐", "3017"]),
-    ("3324", "雙鴻", ["雙鴻", "3324"]),
-    ("2383", "台光電", ["台光電", "2383"]),
-    ("6274", "台燿", ["台燿", "6274"]),
-    ("3037", "欣興", ["欣興", "3037"]),
-    ("8046", "南電", ["南電", "8046"]),
-    ("2303", "聯電", ["聯電", "UMC", "2303"]),
-    ("2408", "南亞科", ["南亞科", "2408"]),
-    ("3711", "日月光投控", ["日月光", "日月光投控", "3711"]),
-    ("2603", "長榮", ["長榮", "2603"]),
-    ("2609", "陽明", ["陽明", "2609"]),
-    ("2881", "富邦金", ["富邦金", "2881"]),
-    ("2882", "國泰金", ["國泰金", "2882"]),
-    ("0050", "元大台灣50", ["元大台灣50", "台灣50", "0050"]),
-    ("00878", "國泰永續高股息", ["國泰永續高股息", "00878"]),
-    ("00919", "群益台灣精選高息", ["群益台灣精選高息", "00919"]),
+    {"code": "2330", "name": "台積電", "aliases": ["台積電", "TSMC", "2330"]},
+    {"code": "2317", "name": "鴻海", "aliases": ["鴻海", "富士康", "2317"]},
+    {"code": "2454", "name": "聯發科", "aliases": ["聯發科", "發哥", "2454"]},
+    {"code": "2308", "name": "台達電", "aliases": ["台達電", "台達", "2308"]},
+    {"code": "2382", "name": "廣達", "aliases": ["廣達", "2382"]},
+    {"code": "3231", "name": "緯創", "aliases": ["緯創", "3231"]},
+    {"code": "6669", "name": "緯穎", "aliases": ["緯穎", "6669"]},
+    {"code": "3017", "name": "奇鋐", "aliases": ["奇鋐", "3017"]},
+    {"code": "3324", "name": "雙鴻", "aliases": ["雙鴻", "3324"]},
+    {"code": "2059", "name": "川湖", "aliases": ["川湖", "2059"]},
+    {"code": "2383", "name": "台光電", "aliases": ["台光電", "2383"]},
+    {"code": "6274", "name": "台燿", "aliases": ["台燿", "6274"]},
+    {"code": "3037", "name": "欣興", "aliases": ["欣興", "3037"]},
+    {"code": "8046", "name": "南電", "aliases": ["南電", "8046"]},
+    {"code": "2303", "name": "聯電", "aliases": ["聯電", "UMC", "2303"]},
+    {"code": "2408", "name": "南亞科", "aliases": ["南亞科", "2408"]},
+    {"code": "3711", "name": "日月光投控", "aliases": ["日月光", "日月光投控", "3711"]},
+    {"code": "3661", "name": "世芯-KY", "aliases": ["世芯", "3661"]},
+    {
+        "code": "3443", "name": "創意", "aliases": ["創意", "3443"],
+        "require_any": ["3443", "IC設計", "IC 設計", "晶片", "設計服務", "台積電"],
+    },
+    {
+        "code": "2603", "name": "長榮", "aliases": ["長榮", "2603"],
+        "exclude": ["長榮航", "長榮航空", "長榮空運", "長榮酒店", "長榮大學", "長榮集團旗下航空"],
+    },
+    {"code": "2609", "name": "陽明", "aliases": ["陽明", "2609"]},
+    {"code": "2881", "name": "富邦金", "aliases": ["富邦金", "2881"]},
+    {"code": "2882", "name": "國泰金", "aliases": ["國泰金", "2882"]},
+    {"code": "0050", "name": "元大台灣50", "aliases": ["元大台灣50", "台灣50", "0050"]},
+    {"code": "00878", "name": "國泰永續高股息", "aliases": ["國泰永續高股息", "00878"]},
+    {"code": "00919", "name": "群益台灣精選高息", "aliases": ["群益台灣精選高息", "00919"]},
 ]
 
 TOPICS = [
@@ -77,11 +91,13 @@ NEGATIVE = ["大跌", "賣超", "利空", "衰退", "下修", "恐慌", "解套"
 
 def main() -> None:
     items = collect_items()
-    if not items:
+    used_fallback = not items
+    if used_fallback:
         items = fallback_items()
     for item in items:
+        item.setdefault("is_fallback", False)
         enrich(item)
-    analysis = analyze(items)
+    analysis = analyze(items, used_fallback)
     SITE_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(render_html(analysis), encoding="utf-8")
     print(analysis["headline"])
@@ -124,25 +140,22 @@ def collect_items() -> list[dict]:
 
 
 def fallback_items() -> list[dict]:
+    # 注意：這些是「示範用假資料」，只有在所有 RSS 抓取全部失敗時才會用到，
+    # 一律標記 is_fallback=True，供 main()/render_html() 顯示明顯警示，
+    # 避免讀者把示範標題當成真實市場訊號。
     now = datetime.now(timezone.utc)
     titles = [
-        "台股今天討論 AI伺服器、PCB、散熱，台積電、廣達、緯創被反覆提到",
-        "BBU/儲能與矽光子題材升溫，市場關注台達電、台光電、台燿",
-        "高股息ETF、金融股與航運股討論度同步增加",
+        "（示範假資料）台股今天討論 AI伺服器、PCB、散熱，台積電、廣達、緯創被反覆提到",
+        "（示範假資料）BBU/儲能與矽光子題材升溫，市場關注台達電、台光電、台燿",
+        "（示範假資料）高股息ETF、金融股與航運股討論度同步增加",
     ]
-    return [{"source": "MVP fallback", "title": t, "summary": "示範資料", "url": "", "query": "fallback", "published_at": now, "engagement": 0} for t in titles]
+    return [{"source": "MVP fallback（非真實資料）", "title": t, "summary": "示範資料", "url": "", "query": "fallback", "published_at": now, "engagement": 0, "is_fallback": True} for t in titles]
 
 
 def enrich(item: dict) -> None:
     text = f"{item['title']} {item['summary']}"
     normalized = text.upper()
-    stocks = []
-    seen = set()
-    for code, name, aliases in STOCKS:
-        if any(contains_alias(normalized, alias) for alias in aliases):
-            if code not in seen:
-                stocks.append({"code": code, "name": name})
-                seen.add(code)
+    stocks = [{"code": stock["code"], "name": stock["name"]} for stock in STOCKS if stock_matches(normalized, stock)]
     topics = [name for name, aliases in TOPICS if any(contains_alias(normalized, alias) for alias in aliases)]
     score = sum(text.count(term) for term in POSITIVE) - sum(text.count(term) for term in NEGATIVE)
     item["stocks"] = stocks
@@ -151,7 +164,19 @@ def enrich(item: dict) -> None:
     item["sentiment"] = "偏樂觀" if score >= 2 else "偏保守" if score <= -2 else "中性"
 
 
-def analyze(items: list[dict]) -> dict:
+def stock_matches(normalized_text: str, stock: dict) -> bool:
+    if not any(contains_alias(normalized_text, alias) for alias in stock["aliases"]):
+        return False
+    exclude = stock.get("exclude", [])
+    if exclude and any(term.upper() in normalized_text for term in exclude):
+        return False
+    require_any = stock.get("require_any", [])
+    if require_any and not any(term.upper() in normalized_text for term in require_any):
+        return False
+    return True
+
+
+def analyze(items: list[dict], used_fallback: bool = False) -> dict:
     now = datetime.now(timezone.utc)
     stocks = rank_entities(items, "stocks", now)
     topics = rank_entities(items, "topics", now)
@@ -160,13 +185,23 @@ def analyze(items: list[dict]) -> dict:
     top_topics = "、".join(row["name"] for row in topics[:3]) or "尚未形成明確題材"
     top_stocks = "、".join(f"{row['name']}({row['code']})" for row in stocks[:4]) or "尚未抓到明確個股"
     surges = "、".join(row["name"] for row in momentum[:3]) or top_topics
+    headline = f"市場今天主要在討論：{top_topics}。被提到最多的個股是 {top_stocks}；短線突然升溫的題材集中在 {surges}。"
+    notes = [
+        "全部訊號皆來自 Google News 公開 RSS，並非社群或法人的獨立資料源，情緒判斷僅為關鍵字正負計數，非真正語意分析。",
+        "「暴增倍數」需要先前累積至少 3 則提及才會顯示倍數，樣本太少時會標示為新興題材，避免以極小基期算出誤導性的倍數。",
+    ]
+    if used_fallback:
+        headline = "【示範假資料，非即時訊號】" + headline
+        notes.insert(0, "本次即時新聞抓取全部失敗，以下內容改用示範用假資料（fallback），並非真實市場訊號，請勿作為投資判斷依據。")
     return {
         "items": items,
         "stocks": stocks,
         "topics": topics,
         "momentum": momentum,
         "sentiment": sentiment,
-        "headline": f"市場今天主要在討論：{top_topics}。被提到最多的個股是 {top_stocks}；短線突然升溫的題材集中在 {surges}。",
+        "headline": headline,
+        "data_quality": "fallback" if used_fallback else "live",
+        "notes": notes,
     }
 
 
@@ -195,6 +230,9 @@ def rank_entities(items: list[dict], field: str, now: datetime) -> list[dict]:
     return sorted(rows, key=lambda row: (row["heat"], row["mentions"]), reverse=True)
 
 
+MOMENTUM_MIN_BASELINE = 3  # 至少要有這麼多「先前」提及，倍數才有意義
+
+
 def rank_momentum(items: list[dict], now: datetime) -> list[dict]:
     recent_since = now - timedelta(hours=6)
     counts = defaultdict(lambda: {"recent": 0, "older": 0, "sources": set(), "latest_title": ""})
@@ -209,10 +247,29 @@ def rank_momentum(items: list[dict], now: datetime) -> list[dict]:
             counts[entity]["sources"].add(item["source"])
     rows = []
     for name, row in counts.items():
-        if row["recent"]:
-            baseline = max(row["older"] / 5, 0.4)
-            rows.append({"name": name, "recent_mentions": row["recent"], "older_mentions": row["older"], "momentum": round(row["recent"] / baseline, 2), "sources": len(row["sources"]), "latest_title": row["latest_title"]})
-    return sorted(rows, key=lambda row: (row["momentum"], row["recent_mentions"]), reverse=True)
+        if not row["recent"]:
+            continue
+        if row["older"] < MOMENTUM_MIN_BASELINE:
+            # 基期太小（例如 older=2）算出來的倍數沒有統計意義，改標示為新興題材，
+            # 並用 recent_mentions 當排序依據，不再用假倍數誤導讀者。
+            momentum = None
+            display = f"新興（近6小時{row['recent']}則，先前僅{row['older']}則，樣本不足以估算倍數）"
+            sort_key = row["recent"]
+        else:
+            momentum = round(row["recent"] / row["older"], 2)
+            display = f"×{momentum}"
+            sort_key = momentum
+        rows.append({
+            "name": name,
+            "recent_mentions": row["recent"],
+            "older_mentions": row["older"],
+            "momentum": momentum,
+            "momentum_display": display,
+            "_sort_key": sort_key,
+            "sources": len(row["sources"]),
+            "latest_title": row["latest_title"],
+        })
+    return sorted(rows, key=lambda row: (row["_sort_key"], row["recent_mentions"]), reverse=True)
 
 
 def article_heat(item: dict, now: datetime) -> float:
@@ -226,7 +283,11 @@ def render_html(analysis: dict) -> str:
     stock_rows = [{**row, "label": f"{row['name']} {row['code']}"} for row in analysis["stocks"]]
     stock_chart = bar_chart(stock_rows, "label", "heat", "#2563eb")
     sankey_html = sankey(analysis["items"])
-    return f"""<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Threads 台股市場熱度雷達</title><style>body{{margin:0;font-family:'Microsoft JhengHei','Noto Sans TC',Arial,sans-serif;background:#f8fafc;color:#111827}}.wrap{{max-width:1240px;margin:0 auto;padding:28px 22px 42px}}.top{{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:18px}}h1{{margin:0;font-size:30px}}h2{{font-size:19px;margin:0 0 12px}}.muted{{color:#64748b;font-size:14px}}.headline{{border-left:5px solid #0f766e;background:#fff;border-radius:8px;padding:16px 18px;line-height:1.8;font-size:17px;margin-bottom:16px}}.metrics,.grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}}.grid{{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}.metric,.panel{{background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.04)}}.metric{{padding:14px}}.metric .label{{color:#64748b;font-size:13px;margin-bottom:8px}}.metric .value{{font-size:26px;font-weight:700}}.panel{{padding:16px;overflow:hidden;margin-bottom:16px}}table{{width:100%;border-collapse:collapse;font-size:14px;background:#fff}}th,td{{padding:10px 9px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}}th{{color:#334155;background:#f1f5f9;position:sticky;top:0}}.table-scroll{{max-height:480px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px}}a{{color:#2563eb;text-decoration:none}}@media(max-width:900px){{.metrics,.grid{{grid-template-columns:1fr}}.top{{display:block}}}}</style></head><body><main class='wrap'><div class='top'><div><h1>Threads 台股市場熱度雷達</h1><div class='muted'>GitHub Pages 雲端自動更新版</div></div><div class='muted'>產生時間：{generated_at}</div></div><section class='headline'>{esc(analysis['headline'])}</section><section class='metrics'><div class='metric'><div class='label'>近 36 小時訊號</div><div class='value'>{len(analysis['items'])}</div></div><div class='metric'><div class='label'>熱門股票數</div><div class='value'>{len(analysis['stocks'])}</div></div><div class='metric'><div class='label'>熱門題材數</div><div class='value'>{len(analysis['topics'])}</div></div><div class='metric'><div class='label'>最後訊號</div><div class='value'>{latest_time(analysis['items'])}</div></div></section><section class='grid'><div class='panel'><h2>今日最熱產業</h2>{topic_chart}</div><div class='panel'><h2>今日最熱股票</h2>{stock_chart}</div></section><section class='grid'><div class='panel'><h2>突然暴增題材</h2>{table(analysis['momentum'], ['name','momentum','recent_mentions','older_mentions','sources','latest_title'])}</div><div class='panel'><h2>情緒榜</h2>{table(analysis['sentiment'], ['code','name','sentiment','sentiment_sum','mentions','latest_title'])}</div></section><section class='panel'><h2>資金流向圖：題材 → 受惠股</h2>{sankey_html}</section><section class='panel'><h2>來源訊號</h2>{source_table(analysis['items'])}</section><p class='muted'>資料來源：公開新聞/RSS fallback。MVP 以討論熱度排序，不構成投資建議。</p></main></body></html>"""
+    fallback_banner = ""
+    if analysis.get("data_quality") == "fallback":
+        fallback_banner = f"<section style='background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-weight:600'>{esc('注意：本次即時新聞抓取全部失敗，以下內容為示範用假資料（fallback），並非真實市場訊號，請勿作為投資判斷依據。')}</section>"
+    notes_html = "".join(f"<li>{esc(note)}</li>" for note in analysis.get("notes", []))
+    return f"""<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Threads 台股市場熱度雷達</title><style>body{{margin:0;font-family:'Microsoft JhengHei','Noto Sans TC',Arial,sans-serif;background:#f8fafc;color:#111827}}.wrap{{max-width:1240px;margin:0 auto;padding:28px 22px 42px}}.top{{display:flex;justify-content:space-between;gap:18px;align-items:end;margin-bottom:18px}}h1{{margin:0;font-size:30px}}h2{{font-size:19px;margin:0 0 12px}}.muted{{color:#64748b;font-size:14px}}.headline{{border-left:5px solid #0f766e;background:#fff;border-radius:8px;padding:16px 18px;line-height:1.8;font-size:17px;margin-bottom:16px}}.metrics,.grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}}.grid{{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}.metric,.panel{{background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.04)}}.metric{{padding:14px}}.metric .label{{color:#64748b;font-size:13px;margin-bottom:8px}}.metric .value{{font-size:26px;font-weight:700}}.panel{{padding:16px;overflow:hidden;margin-bottom:16px}}table{{width:100%;border-collapse:collapse;font-size:14px;background:#fff}}th,td{{padding:10px 9px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}}th{{color:#334155;background:#f1f5f9;position:sticky;top:0}}.table-scroll{{max-height:480px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px}}a{{color:#2563eb;text-decoration:none}}.footnote{{font-size:12px;color:#64748b;line-height:1.7}}@media(max-width:900px){{.metrics,.grid{{grid-template-columns:1fr}}.top{{display:block}}}}</style></head><body><main class='wrap'><div class='top'><div><h1>Threads 台股市場熱度雷達</h1><div class='muted'>GitHub Pages 雲端自動更新版</div></div><div class='muted'>產生時間：{generated_at}</div></div>{fallback_banner}<section class='headline'>{esc(analysis['headline'])}</section><section class='metrics'><div class='metric'><div class='label'>近 24 小時訊號</div><div class='value'>{len(analysis['items'])}</div></div><div class='metric'><div class='label'>熱門股票數</div><div class='value'>{len(analysis['stocks'])}</div></div><div class='metric'><div class='label'>熱門題材數</div><div class='value'>{len(analysis['topics'])}</div></div><div class='metric'><div class='label'>最後訊號</div><div class='value'>{latest_time(analysis['items'])}</div></div></section><section class='grid'><div class='panel'><h2>今日最熱產業</h2>{topic_chart}</div><div class='panel'><h2>今日最熱股票</h2>{stock_chart}</div></section><section class='grid'><div class='panel'><h2>突然暴增題材</h2>{table(analysis['momentum'], ['name','momentum_display','recent_mentions','older_mentions','sources','latest_title'])}</div><div class='panel'><h2>情緒榜</h2>{table(analysis['sentiment'], ['code','name','sentiment','sentiment_sum','mentions','latest_title'])}</div></section><section class='panel'><h2>資金流向圖：題材 → 受惠股</h2>{sankey_html}</section><section class='panel'><h2>來源訊號</h2>{source_table(analysis['items'])}</section><section class='panel footnote'><h2 style='font-size:15px'>資料與方法限制說明</h2><ul>{notes_html}</ul></section><p class='muted'>資料來源：公開新聞/RSS fallback。MVP 以討論熱度排序，不構成投資建議。</p></main></body></html>"""
 
 
 def bar_chart(rows: list[dict], y_col: str, x_col: str, color: str) -> str:
@@ -259,7 +320,7 @@ def sankey(items: list[dict]) -> str:
 def table(rows: list[dict], columns: list[str], limit: int = 18) -> str:
     if not rows:
         return "<p class='muted'>目前沒有足夠資料。</p>"
-    labels = {"code":"代號","name":"名稱","heat":"熱度","mentions":"提及","sources":"來源數","sentiment":"情緒","sentiment_sum":"情緒分","latest_title":"最新訊號","momentum":"暴增倍數","recent_mentions":"近 6 小時","older_mentions":"較早"}
+    labels = {"code":"代號","name":"名稱","heat":"熱度","mentions":"提及","sources":"來源數","sentiment":"情緒","sentiment_sum":"情緒分","latest_title":"最新訊號","momentum":"暴增倍數","momentum_display":"暴增狀態","recent_mentions":"近 6 小時","older_mentions":"較早"}
     header = "".join(f"<th>{labels.get(col, col)}</th>" for col in columns)
     body = "".join("<tr>" + "".join(f"<td>{esc(row.get(col, ''))}</td>" for col in columns) + "</tr>" for row in rows[:limit])
     return f"<div class='table-scroll'><table><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table></div>"
@@ -304,7 +365,8 @@ def source_name(entry: object, title: str) -> str:
 def contains_alias(text: str, alias: str) -> bool:
     alias_norm = alias.upper()
     if alias_norm.isdigit():
-        return bool(re.search(rf"(?<!\d){re.escape(alias_norm)}(?!\d)", text))
+        # 排除股票代號恰好是年份的一部分，例如「2059年」不應命中股票代號 2059
+        return bool(re.search(rf"(?<!\d){re.escape(alias_norm)}(?!\d)(?!年)", text))
     return alias_norm in text
 
 
