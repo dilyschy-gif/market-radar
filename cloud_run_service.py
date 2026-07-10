@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from flask import Flask, jsonify, request
 
-from market_radar_pro import INDEX_PATH, JSON_PATH, build_market_radar, write_outputs
+from market_radar_pro import INDEX_PATH, JSON_PATH, build_market_radar, history_path_for, write_outputs
 
 # 需要額外安裝 google-auth（Cloud Run 環境通常已內建，本機測試請自行
 # `pip install google-auth`）：用來驗證 Cloud Scheduler 呼叫 /run 時附上的 OIDC ID Token。
@@ -92,7 +92,9 @@ def run() -> tuple[dict, int]:
     verify_oidc_request()
     analysis = build_market_radar()
     write_outputs(analysis)
-    publish_result = publish_to_github([INDEX_PATH, JSON_PATH])
+    # 每日留檔（data/history/YYYY-MM-DD.json）也一併發布：累積歷史快照才能回測
+    # 「上榜股票後 N 日報酬」，驗證雷達是否真的有參考價值。
+    publish_result = publish_to_github([INDEX_PATH, JSON_PATH, history_path_for(analysis)])
     return jsonify({"ok": True, "headline": analysis["headline"], "publish": publish_result}), 200
 
 
@@ -107,7 +109,13 @@ def publish_to_github(paths: list[Path]) -> dict:
     for path in paths:
         if not path.exists():
             continue
-        repo_path = "index.html" if path.name == "index.html" else "data/latest.json"
+        if path.name == "index.html":
+            repo_path = "index.html"
+        elif path.name == "latest.json":
+            repo_path = "data/latest.json"
+        else:
+            # 每日歷史快照，檔名為 YYYY-MM-DD.json
+            repo_path = f"data/history/{path.name}"
         put_github_file(repo, branch, repo_path, path.read_text(encoding="utf-8"), token)
         published.append(repo_path)
     return {"skipped": False, "repo": repo, "branch": branch, "files": published}
