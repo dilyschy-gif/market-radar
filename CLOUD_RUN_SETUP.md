@@ -19,8 +19,9 @@ GitHub Pages
 | `GITHUB_TOKEN` | GitHub fine-grained token，需有目標 repo 的 Contents read/write 權限 |
 | `GITHUB_REPOSITORY` | 預設 `dilyschy-gif/market-radar` |
 | `GITHUB_BRANCH` | 預設 `gh-pages` |
+| `FINMIND_API_TOKEN` | FinMind API Token；只放 Secret Manager，不可寫入映像或原始碼 |
 
-`GITHUB_TOKEN` 建議放在 Secret Manager，不要寫死在程式碼或公開檔案。
+`GITHUB_TOKEN` 與 `FINMIND_API_TOKEN` 都建議放在 Secret Manager，不要寫死在程式碼或公開檔案。
 
 ## 部署 Cloud Run
 
@@ -38,8 +39,8 @@ Cloud Scheduler 建立 HTTP job，定時呼叫：
 https://<cloud-run-url>/run
 ```
 
-建議時段：08:37、12:37、15:17、20:07。
+建議時段：08:37、12:37、15:17、20:07、21:17。IC設計籌碼分數只會在21:10後且資料日尚未更新時重新抓取；其他時段沿用最近完整快照。
 
 ## 現階段資料限制
 
-目前 Pro 版是低成本 MVP，先用公開 RSS 查詢模擬三層資訊引擎。它可以每天更新「市場今天在討論什麼」，但還不是正式授權的 Threads API、券商報告 API 或完整 TWSE/TPEx 資料庫。下一版可逐步替換成正式資料源。
+目前 Pro 版是低成本 MVP：新聞層仍使用公開RSS；TWSE提供上市股量價與法人事實層；FinMind免費API提供固定IC設計股票池的日價量、三大法人與融資融券。它還不是正式授權的Threads API、券商報告API或完整全市場資料庫。

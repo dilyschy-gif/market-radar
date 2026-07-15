@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import time
 from collections import defaultdict
@@ -13,12 +14,15 @@ from urllib.parse import quote_plus
 import feedparser
 import requests
 
+from finmind_chip import scan_ic_design
+
 ROOT = Path(__file__).resolve().parent
 SITE_DIR = ROOT / "site"
 DATA_DIR = SITE_DIR / "data"
 HISTORY_DIR = DATA_DIR / "history"
 INDEX_PATH = SITE_DIR / "index.html"
 JSON_PATH = DATA_DIR / "latest.json"
+FINMIND_PATH = DATA_DIR / "ic-chip.json"
 RSS_ENDPOINT = "https://news.google.com/rss/search?q={query}+when:1d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
@@ -128,17 +132,30 @@ def build_market_radar() -> dict:
         item.setdefault("is_fallback", False)
         enrich_item(item)
     facts = fetch_market_facts([stock["code"] for stock in STOCKS])
+    ic_chip = scan_ic_design(
+        token=os.getenv("FINMIND_API_TOKEN"),
+        cache_path=FINMIND_PATH,
+        expected_trade_date=facts.get("trade_date"),
+        official_facts=facts,
+    )
     layers = {layer: summarize_layer(items, layer) for layer in LAYERS}
     cross = build_cross_analysis(layers, facts)
     consensus = build_consensus(layers, items)
     watchlist = cross[:5]
     headline = market_status_prefix(facts) + build_headline(consensus, watchlist)
+    ic_leaders = [row for row in ic_chip.get("rows", []) if row.get("eligible")][:3]
+    if ic_leaders:
+        leader_text = "、".join(f"{row['name']}({row['score']}分/{row['grade']})" for row in ic_leaders)
+        headline += f" IC設計籌碼領先：{leader_text}。"
     notes = [
         '「三大法人買賣超」「收盤/漲跌%」「量比」為證交所公布之真實交易數據（T86 / STOCK_DAY），非新聞聲量。',
         '「社群熱度」「話題分數」仍為 Google News 公開 RSS 的新聞聲量推估，並非 Threads/PTT 官方 API，情緒判斷僅為關鍵字正負計數。',
         '判讀矩陣門檻：法人買/賣超 ±' + str(INST_BUY_LOTS) + ' 張、社群相對分數 ' + str(SOCIAL_HOT_SCORE) + '、量比 ' + str(VOLUME_SURGE_RATIO) + ' 倍，皆為可調參數而非最佳化結果。',
         '本工具是「今天該研究什麼」的清單產生器，不是進場訊號：上榜 → 等收盤確認法人是否真的買 → 隔日看是否延續，再決定要不要動作。',
+        'IC設計籌碼分數使用 FinMind 日價量、三大法人及融資融券，權重為法人40%、融資健康20%、短空壓力15%、趨勢確認25%；A/B級仍是研究名單，不是買進訊號。',
     ]
+    if ic_chip.get("status") in ("disabled", "error", "stale"):
+        notes.insert(0, ic_chip.get("message", "FinMind IC籌碼資料未完成。"))
     if not facts["ok"]:
         notes.insert(0, '本次證交所市場數據抓取失敗，量價與法人欄位缺漏，僅剩新聞聲量層，判讀可信度大幅下降。')
     if used_fallback:
@@ -148,6 +165,7 @@ def build_market_radar() -> dict:
         "generated_at": datetime.now(TAIPEI_TZ).isoformat(),
         "data_quality": "fallback" if used_fallback else "live",
         "market_facts": {k: facts[k] for k in ("ok", "trade_date", "market_open_today", "status")},
+        "ic_chip": ic_chip,
         "headline": headline,
         "layers": layers,
         "cross_analysis": cross,
@@ -520,6 +538,7 @@ def render_html(data: dict) -> str:
     if data.get("data_quality") == "fallback":
         banners.append(banner_html('注意：本次即時新聞抓取全部失敗，以下內容為示範用假資料（fallback），並非真實市場訊號，請勿作為投資判斷依據。', "#fee2e2", "#fca5a5", "#991b1b"))
     market_facts = data.get("market_facts", {})
+    ic_chip = data.get("ic_chip", {})
     status_text = market_facts.get("status", "")
     if status_text:
         if not market_facts.get("ok"):
@@ -528,8 +547,15 @@ def render_html(data: dict) -> str:
             banners.append(banner_html(status_text, "#fef3c7", "#fcd34d", "#92400e"))
         else:
             banners.append(banner_html(status_text, "#ecfdf5", "#6ee7b7", "#065f46"))
+    ic_message = ic_chip.get("message", "")
+    if ic_message:
+        if ic_chip.get("status") in ("disabled", "error", "stale"):
+            banners.append(banner_html(ic_message, "#fee2e2", "#fca5a5", "#991b1b"))
+        elif ic_chip.get("status") in ("cached", "partial"):
+            banners.append(banner_html(ic_message, "#fef3c7", "#fcd34d", "#92400e"))
     notes_html = "".join(f"<li>{esc(note)}</li>" for note in data.get("notes", []))
-    return f"""<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{esc(title)}</title><style>body{{margin:0;background:#f8fafc;color:#111827;font-family:'Microsoft JhengHei','Noto Sans TC',Arial,sans-serif}}.wrap{{max-width:1280px;margin:0 auto;padding:28px 22px 44px}}.top{{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:14px}}h1{{margin:0;font-size:30px}}h2{{margin:0 0 12px;font-size:19px}}.muted{{color:#64748b;font-size:14px}}.nav{{display:flex;gap:8px;margin:0 0 18px}}.nav a{{border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:8px 14px;color:#111827;text-decoration:none}}.nav a.active{{background:#0f766e;color:#fff;border-color:#0f766e}}.headline{{border-left:5px solid #0f766e;background:#fff;border-radius:8px;padding:16px 18px;line-height:1.8;font-size:17px;margin-bottom:16px}}.grid3{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}}.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:16px}}.panel{{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.04);overflow:hidden}}.score{{font-size:28px;font-weight:700;margin-top:8px}}table{{width:100%;border-collapse:collapse;font-size:14px}}th,td{{padding:10px 9px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}}th{{background:#f1f5f9;color:#334155}}.table-scroll{{max-height:520px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px}}.tag{{display:inline-block;background:#ecfeff;color:#0f766e;border:1px solid #99f6e4;border-radius:999px;padding:4px 9px;margin:0 6px 6px 0;font-size:13px}}.footnote{{font-size:12px;color:#64748b;line-height:1.7}}@media(max-width:980px){{.grid3,.grid2,.top{{display:block}}.panel{{margin-bottom:14px}}}}</style></head><body><main class='wrap'><div class='top'><div><h1>{esc(title)}</h1><div class='muted'>{esc(subtitle)}</div></div><div class='muted'>{esc('更新時間：')}{esc(format_time(data['generated_at']))}</div></div><nav class='nav'><a class='active' href='https://dilyschy-gif.github.io/market-radar/'>台股雷達</a><a href='https://dilyschy-gif.github.io/us-stockradar/'>美股雷達</a></nav>{''.join(banners)}<section class='headline'>{esc(data['headline'])}</section><section class='grid3'>{render_layer_cards(data['layers'])}</section><section class='grid2'><div class='panel'><h2>{esc('法人研究共識（新聞聲量）')}</h2>{render_consensus(data['consensus'])}</div><div class='panel'><h2>{esc('觀察名單：話題 × 資金交叉檢驗前 5 檔')}</h2>{render_table(data['watchlist'], watch_columns())}</div></section><section class='panel'><h2>{esc('市場熱度交叉分析（話題聲量 vs 證交所真實數據）')}</h2>{render_table(data['cross_analysis'][:18], cross_columns())}</section><section class='panel' style='margin-top:16px'><h2>{esc('來源明細')}</h2>{render_sources(data['source_items'])}</section><section class='panel footnote'><h2 style='font-size:15px'>{esc('資料與方法限制說明')}</h2><ul>{notes_html}</ul></section></main></body></html>"""
+    ic_rows = [row for row in ic_chip.get("rows", []) if row.get("eligible")][:15]
+    return f"""<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{esc(title)}</title><style>body{{margin:0;background:#f8fafc;color:#111827;font-family:'Microsoft JhengHei','Noto Sans TC',Arial,sans-serif}}.wrap{{max-width:1280px;margin:0 auto;padding:28px 22px 44px}}.top{{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:14px}}h1{{margin:0;font-size:30px}}h2{{margin:0 0 12px;font-size:19px}}.muted{{color:#64748b;font-size:14px}}.nav{{display:flex;gap:8px;margin:0 0 18px}}.nav a{{border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:8px 14px;color:#111827;text-decoration:none}}.nav a.active{{background:#0f766e;color:#fff;border-color:#0f766e}}.headline{{border-left:5px solid #0f766e;background:#fff;border-radius:8px;padding:16px 18px;line-height:1.8;font-size:17px;margin-bottom:16px}}.grid3{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}}.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:16px}}.panel{{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.04);overflow:hidden}}.score{{font-size:28px;font-weight:700;margin-top:8px}}table{{width:100%;border-collapse:collapse;font-size:14px}}th,td{{padding:10px 9px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}}th{{background:#f1f5f9;color:#334155}}.table-scroll{{max-height:520px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px}}.tag{{display:inline-block;background:#ecfeff;color:#0f766e;border:1px solid #99f6e4;border-radius:999px;padding:4px 9px;margin:0 6px 6px 0;font-size:13px}}.footnote{{font-size:12px;color:#64748b;line-height:1.7}}@media(max-width:980px){{.grid3,.grid2,.top{{display:block}}.panel{{margin-bottom:14px}}}}</style></head><body><main class='wrap'><div class='top'><div><h1>{esc(title)}</h1><div class='muted'>{esc(subtitle)}</div></div><div class='muted'>{esc('更新時間：')}{esc(format_time(data['generated_at']))}</div></div><nav class='nav'><a class='active' href='https://dilyschy-gif.github.io/market-radar/'>台股雷達</a><a href='https://dilyschy-gif.github.io/us-stockradar/'>美股雷達</a></nav>{''.join(banners)}<section class='headline'>{esc(data['headline'])}</section><section class='grid3'>{render_layer_cards(data['layers'])}</section><section class='grid2'><div class='panel'><h2>{esc('法人研究共識（新聞聲量）')}</h2>{render_consensus(data['consensus'])}</div><div class='panel'><h2>{esc('觀察名單：話題 × 資金交叉檢驗前 5 檔')}</h2>{render_table(data['watchlist'], watch_columns())}</div></section><section class='panel'><h2>{esc('市場熱度交叉分析（話題聲量 vs 證交所真實數據）')}</h2>{render_table(data['cross_analysis'][:18], cross_columns())}</section><section class='panel' style='margin-top:16px'><h2>{esc('IC設計籌碼分數（FinMind）')}</h2><p class='muted'>{esc(f"資料日：{ic_chip.get('as_of') or '－'}｜完整 {ic_chip.get('complete_count', 0)}/{ic_chip.get('universe_size', 0)} 檔｜僅列成交值達門檻且資料完整者")}</p>{render_table(ic_rows, ic_chip_columns())}</section><section class='panel' style='margin-top:16px'><h2>{esc('來源明細')}</h2>{render_sources(data['source_items'])}</section><section class='panel footnote'><h2 style='font-size:15px'>{esc('資料與方法限制說明')}</h2><ul>{notes_html}</ul></section></main></body></html>"""
 
 
 def banner_html(text: str, bg: str, border: str, color: str) -> str:
@@ -560,6 +586,16 @@ def watch_columns() -> list[tuple[str, str]]:
 
 def cross_columns() -> list[tuple[str, str]]:
     return [("name", '股票'), ("close", '收盤'), ("change_pct", '漲跌%'), ("volume_lots", '成交量(張)'), ("volume_ratio", '量比*'), ("inst_display", '三大法人買賣超'), ("social_heat", '社群熱度'), ("inst_mentions", '券商提及'), ("buzz_score", '話題分數'), ("signal", '判讀')]
+
+
+def ic_chip_columns() -> list[tuple[str, str]]:
+    return [
+        ("rank", '排名'), ("code", '代號'), ("name", '股票'), ("liquidity_group", '流動性'),
+        ("score", '總分'), ("grade", '級別'), ("institution_score", '法人'),
+        ("financing_score", '融資健康'), ("short_score", '短空壓力'), ("trend_score", '趨勢'),
+        ("foreign_5d_lots", '外資5日(張)'), ("trust_20d_lots", '投信20日(張)'),
+        ("margin_5d_pct", '融資5日'), ("ret_20d_pct", '20日報酬'), ("reason", '判讀'),
+    ]
 
 
 def render_sources(items: list[dict]) -> str:
