@@ -8,6 +8,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY market_radar_pro.py cloud_run_service.py ./
+COPY market_radar_pro.py finmind_chip.py cloud_run_service.py ./
 
 CMD ["python", "cloud_run_service.py"]

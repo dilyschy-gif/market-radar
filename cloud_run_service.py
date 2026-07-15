@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from flask import Flask, jsonify, request
 
-from market_radar_pro import INDEX_PATH, JSON_PATH, build_market_radar, history_path_for, write_outputs
+from market_radar_pro import FINMIND_PATH, INDEX_PATH, JSON_PATH, build_market_radar, history_path_for, write_outputs
 
 # 需要額外安裝 google-auth（Cloud Run 環境通常已內建，本機測試請自行
 # `pip install google-auth`）：用來驗證 Cloud Scheduler 呼叫 /run 時附上的 OIDC ID Token。
@@ -94,7 +94,7 @@ def run() -> tuple[dict, int]:
     write_outputs(analysis)
     # 每日留檔（data/history/YYYY-MM-DD.json）也一併發布：累積歷史快照才能回測
     # 「上榜股票後 N 日報酬」，驗證雷達是否真的有參考價值。
-    publish_result = publish_to_github([INDEX_PATH, JSON_PATH, history_path_for(analysis)])
+    publish_result = publish_to_github([INDEX_PATH, JSON_PATH, FINMIND_PATH, history_path_for(analysis)])
     return jsonify({"ok": True, "headline": analysis["headline"], "publish": publish_result}), 200
 
 
@@ -113,6 +113,8 @@ def publish_to_github(paths: list[Path]) -> dict:
             repo_path = "index.html"
         elif path.name == "latest.json":
             repo_path = "data/latest.json"
+        elif path.name == "ic-chip.json":
+            repo_path = "data/ic-chip.json"
         else:
             # 每日歷史快照，檔名為 YYYY-MM-DD.json
             repo_path = f"data/history/{path.name}"
